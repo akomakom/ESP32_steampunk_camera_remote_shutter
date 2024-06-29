@@ -152,27 +152,57 @@ void taskServer(void*) {
 
 
 void neopixelServer(void*) {
- for(;;)
-    {
+    long timeCurrentModeStarted = millis();
+
+    for(;;) {
         if (ledRestart) {
             delay(50); // make sure loops exit
             Serial.printf("Switching to LED mode %d\n", ledMode);
+            timeCurrentModeStarted = millis();
         }
         ledRestart = false;
+
         switch(ledMode) {
+        case OFF:
+            yield();
+            break;
         case WAITING:
-            rainbow(40);
+            shimmer(strip.Color(255, 0, 0), __NEOPIXEL_MODE_SHIMMER_SPEED);
             break;
         case SENDING:
-            rainbow(10);
+            colorWipe(strip.Color(255, 0, 0), 20); // Red
             break;
         case ANTICIPATING:
-            theaterChaseRainbow(50);
+            if ((millis() - timeCurrentModeStarted) > __NEOPIXEL_MODE_ANTICIPATION_TIMEOUT) {
+              // we've been anticipating too long, go back to waiting.
+              ledMode = WAITING;
+            } else {
+              theaterChaseRainbow(50);
+            }
             break;
         }
     }
 }
 
+void setStripToColor(uint32_t color) {
+  for (int i = 0; i < strip.numPixels(); i++) { // For each pixel in strip...
+    strip.setPixelColor(i, color); //  Set pixel's color (in RAM)
+  }
+}
+
+void shimmer(uint32_t color, int wait) {
+  for (int brightness = __NEOPIXEL_MODE_SHIMMER_MIN_BRIGHTNESS; !ledRestart && brightness < __NEOPIXEL_MODE_SHIMMER_MAX_BRIGHTNESS ; brightness++) {
+    setStripToColor(color * brightness/255);
+    strip.show();
+    delay(wait);
+  }
+  for (int brightness = __NEOPIXEL_MODE_SHIMMER_MAX_BRIGHTNESS; !ledRestart && brightness > __NEOPIXEL_MODE_SHIMMER_MIN_BRIGHTNESS ; brightness--) {
+    setStripToColor(color * brightness/255);
+    strip.show();
+    delay(wait);
+  }
+
+}
 
 // Rainbow cycle along whole strip. Pass delay time (in ms) between frames.
 void rainbow(int wait)
@@ -229,6 +259,7 @@ void theaterChaseRainbow(int wait)
 }
 void colorWipe(uint32_t color, int wait)
 {
+  strip.clear();
   for (int i = 0; !ledRestart && i < strip.numPixels(); i++)
   { // For each pixel in strip...
     strip.setPixelColor(i, color); //  Set pixel's color (in RAM)
@@ -244,7 +275,8 @@ void setup() {
   // The Button
   pinMode(__BUTTONPIN_UP, INPUT_PULLUP);
   pinMode(__BUTTONPIN_DOWN, INPUT_PULLUP);
-  setupInterrupts();
+  attachInterrupt(digitalPinToInterrupt(__BUTTONPIN_DOWN), buttonPressed, FALLING);
+  attachInterrupt(digitalPinToInterrupt(__BUTTONPIN_UP), buttonReleased, FALLING);
 
   // LED
   pinMode(LED, OUTPUT);
@@ -255,7 +287,7 @@ void setup() {
   strip.show();  // Turn OFF all pixels ASAP
   pinMode(__NEOPIXEL_PIN, OUTPUT);
   digitalWrite(__NEOPIXEL_PIN, LOW);
-  changeLedMode(WAITING);
+  changeBackgroundLedMode(WAITING);
 
   xTaskCreate(taskServer, "bluetoothServer", 20000, NULL, 5, NULL);
   xTaskCreate(neopixelServer, "neopixelServer", 20000, NULL, 10, NULL);
@@ -265,10 +297,15 @@ void loop() {
 
   if (connected & btnFlag) {
     btnFlag = false;
-    changeLedMode(SENDING);
+    changeBackgroundLedMode(OFF);
     digitalWrite(LED, HIGH);
     Serial.println("Cheese...");
 
+    // show a light show (one pass)
+    changeBackgroundLedMode(SENDING);
+    delay(2000);
+
+    // Send
     //Key press
     uint8_t msg[] = {0x0, 0x0, __SEND_KEY, 0x0, 0x0, 0x0, 0x0, 0x0};
     input->setValue(msg, sizeof(msg));
@@ -280,33 +317,29 @@ void loop() {
     input->notify();
 
     delay(1000);
-    changeLedMode(WAITING);
+    changeBackgroundLedMode(WAITING);
     digitalWrite(LED, LOW);
-    setupInterrupts();
+    interrupts();
+  }
+
+  if (!ledRestart) {
+    interrupts();
   }
   delay(50);
 }
 
-void setupInterrupts() {
-  attachInterrupt(digitalPinToInterrupt(__BUTTONPIN_DOWN), buttonPressed, FALLING);
-  attachInterrupt(digitalPinToInterrupt(__BUTTONPIN_UP), buttonReleased, FALLING);
-}
-void clearInterrupts() {
-  detachInterrupt(digitalPinToInterrupt(__BUTTONPIN_DOWN));
-  detachInterrupt(digitalPinToInterrupt(__BUTTONPIN_UP));
-}
-
-void changeLedMode(LED_MODES mode) {
+void changeBackgroundLedMode(LED_MODES mode) {
     ledMode = mode;
     ledRestart = true;
 }
 
 IRAM_ATTR void buttonPressed() {
-  clearInterrupts();  // reset in loop
+  noInterrupts();  // reset in loop
   // pressed
   btnFlag = true;
 }
 
 IRAM_ATTR void buttonReleased() {
-  changeLedMode(ANTICIPATING); //TODO: timeout then switch to WAITING
+  noInterrupts();
+  changeBackgroundLedMode(ANTICIPATING); //TODO: timeout then switch to WAITING
 }
