@@ -154,7 +154,11 @@ void taskServer(void*) {
 void neopixelServer(void*) {
  for(;;)
     {
-
+        if (ledRestart) {
+            delay(50); // make sure loops exit
+            Serial.printf("Switching to LED mode %d\n", ledMode);
+        }
+        ledRestart = false;
         switch(ledMode) {
         case WAITING:
             rainbow(40);
@@ -259,7 +263,6 @@ void setup() {
 
 void loop() {
 
-  Serial.printf("Loop is still alive, flags: %d, %d, %d ", connected, btnFlag, ledRestart);
   if (connected & btnFlag) {
     btnFlag = false;
     changeLedMode(SENDING);
@@ -281,26 +284,16 @@ void loop() {
     digitalWrite(LED, LOW);
     setupInterrupts();
   }
-
-  if (ledRestart) {
-    Serial.printf("Switching to LED mode %d\n", ledMode);
-    delay(50); // make sure loops exit
-    ledRestart = false;
-    setupInterrupts();
-  }
-
   delay(50);
 }
 
 void setupInterrupts() {
   attachInterrupt(digitalPinToInterrupt(__BUTTONPIN_DOWN), buttonPressed, FALLING);
   attachInterrupt(digitalPinToInterrupt(__BUTTONPIN_UP), buttonReleased, FALLING);
-  Serial.println("Setting up interrupts");
 }
 void clearInterrupts() {
   detachInterrupt(digitalPinToInterrupt(__BUTTONPIN_DOWN));
   detachInterrupt(digitalPinToInterrupt(__BUTTONPIN_UP));
-  Serial.println("Clearing interrupts");
 }
 
 void changeLedMode(LED_MODES mode) {
@@ -310,14 +303,10 @@ void changeLedMode(LED_MODES mode) {
 
 IRAM_ATTR void buttonPressed() {
   clearInterrupts();  // reset in loop
-  Serial.println("Detected button press");
   // pressed
   btnFlag = true;
 }
 
 IRAM_ATTR void buttonReleased() {
-  clearInterrupts();
-  Serial.println("Detected button release");
   changeLedMode(ANTICIPATING); //TODO: timeout then switch to WAITING
-  Serial.println("Finished buttonReleased");
 }
