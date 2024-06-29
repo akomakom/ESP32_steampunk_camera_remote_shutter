@@ -29,6 +29,16 @@
 #include "HIDTypes.h"
 #include "./settings.h"
 
+
+//// NEOPIXELS
+#include <Adafruit_NeoPixel.h>
+// Declare our NeoPixel strip object:
+Adafruit_NeoPixel strip(__NEOPIXEL_COUNT, __NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
+enum LED_MODES { OFF, WAITING, SENDING, ANTICIPATING };
+LED_MODES ledMode = WAITING;
+bool ledRestart = false; // allows for quick mode change, ends loops
+
+// on-board LED to indicate bluetooth activity
 #define LED 2
 
 BLEHIDDevice* hid;
@@ -43,12 +53,14 @@ class MyCallbacks : public BLEServerCallbacks {
       connected = true;
       BLE2902* desc = (BLE2902*)input->getDescriptorByUUID(BLEUUID((uint16_t)0x2902));
       desc->setNotifications(true);
+      Serial.printf("Connected to %s\n", desc->getUUID().toString());
     }
 
     void onDisconnect(BLEServer* pServer) {
       connected = false;
       BLE2902* desc = (BLE2902*)input->getDescriptorByUUID(BLEUUID((uint16_t)0x2902));
       desc->setNotifications(false);
+      Serial.printf("Disconnected from %s\n", desc->getUUID().toString());
     }
 };
 
@@ -79,7 +91,7 @@ void taskServer(void*) {
 
   output->setCallbacks(new MyOutputCallbacks());
 
-  std::string name = __MANUFACTURER;
+  String name = __MANUFACTURER;
   hid->manufacturer()->setValue(name);
 
   hid->pnp(0x02, 0xe502, 0xa111, 0x0210);
@@ -138,25 +150,119 @@ void taskServer(void*) {
 
 };
 
+
+void neopixelServer(void*) {
+ for(;;)
+    {
+
+        switch(ledMode) {
+        case WAITING:
+            rainbow(40);
+            break;
+        case SENDING:
+            rainbow(10);
+            break;
+        case ANTICIPATING:
+            theaterChaseRainbow(50);
+            break;
+        }
+    }
+}
+
+
+// Rainbow cycle along whole strip. Pass delay time (in ms) between frames.
+void rainbow(int wait)
+{
+  // Hue of first pixel runs 5 complete loops through the color wheel.
+  // Color wheel has a range of 65536 but it's OK if we roll over, so
+  // just count from 0 to 5*65536. Adding 256 to firstPixelHue each time
+  // means we'll make 5*65536/256 = 1280 passes through this outer loop:
+  for (long firstPixelHue = 0; !ledRestart && firstPixelHue < 5 * 65536; firstPixelHue += 256)
+  {
+    for (int i = 0; !ledRestart && i < strip.numPixels(); i++)
+    { // For each pixel in strip...
+      // Offset pixel hue by an amount to make one full revolution of the
+      // color wheel (range of 65536) along the length of the strip
+      // (strip.numPixels() steps):
+      int pixelHue = firstPixelHue + (i * 65536L / strip.numPixels());
+      // strip.ColorHSV() can take 1 or 3 arguments: a hue (0 to 65535) or
+      // optionally add saturation and value (brightness) (each 0 to 255).
+      // Here we're using just the single-argument hue variant. The result
+      // is passed through strip.gamma32() to provide 'truer' colors
+      // before assigning to each pixel:
+      strip.setPixelColor(i, strip.gamma32(strip.ColorHSV(pixelHue)));
+    }
+    strip.show(); // Update strip with new contents
+    delay(wait);  // Pause for a moment
+  }
+}
+
+
+// Rainbow-enhanced theater marquee. Pass delay time (in ms) between frames.
+void theaterChaseRainbow(int wait)
+{
+  int firstPixelHue = 0; // First pixel starts at red (hue 0)
+  for (int a = 0; !ledRestart && a < 30; a++)
+  { // Repeat 30 times...
+    for (int b = 0; !ledRestart && b < 3; b++)
+    { //  'b' counts from 0 to 2...
+      strip.clear(); //   Set all pixels in RAM to 0 (off)
+      // 'c' counts up from 'b' to end of strip in increments of 3...
+      for (int c = b; !ledRestart && c < strip.numPixels(); c += 3)
+      {
+        // hue of pixel 'c' is offset by an amount to make one full
+        // revolution of the color wheel (range 65536) along the length
+        // of the strip (strip.numPixels() steps):
+        int hue = firstPixelHue + c * 65536L / strip.numPixels();
+        uint32_t color = strip.gamma32(strip.ColorHSV(hue)); // hue -> RGB
+        strip.setPixelColor(c, color);                       // Set pixel 'c' to value 'color'
+      }
+      strip.show();                // Update strip with new contents
+      delay(wait);                 // Pause for a moment
+      firstPixelHue += 65536 / 90; // One cycle of color wheel over 90 frames
+    }
+  }
+}
+void colorWipe(uint32_t color, int wait)
+{
+  for (int i = 0; !ledRestart && i < strip.numPixels(); i++)
+  { // For each pixel in strip...
+    strip.setPixelColor(i, color); //  Set pixel's color (in RAM)
+    strip.show();                  //  Update strip to match
+    delay(wait);                   //  Pause for a moment
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println("Starting BLE works!");
 
   // The Button
-  pinMode(__BUTTONPIN, INPUT);
-  attachInterrupt(digitalPinToInterrupt(__BUTTONPIN), pushButton, FALLING);
+  pinMode(__BUTTONPIN_UP, INPUT_PULLUP);
+  pinMode(__BUTTONPIN_DOWN, INPUT_PULLUP);
+  setupInterrupts();
 
   // LED
   pinMode(LED, OUTPUT);
   digitalWrite(LED, LOW);
 
-  xTaskCreate(taskServer, "server", 20000, NULL, 5, NULL);
+  // NeoPixel
+  strip.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+  strip.show();  // Turn OFF all pixels ASAP
+  pinMode(__NEOPIXEL_PIN, OUTPUT);
+  digitalWrite(__NEOPIXEL_PIN, LOW);
+  changeLedMode(WAITING);
+
+  xTaskCreate(taskServer, "bluetoothServer", 20000, NULL, 5, NULL);
+  xTaskCreate(neopixelServer, "neopixelServer", 20000, NULL, 10, NULL);
 }
 
 void loop() {
 
+  Serial.printf("Loop is still alive, flags: %d, %d, %d ", connected, btnFlag, ledRestart);
   if (connected & btnFlag) {
     btnFlag = false;
+    changeLedMode(SENDING);
     digitalWrite(LED, HIGH);
     Serial.println("Cheese...");
 
@@ -171,13 +277,47 @@ void loop() {
     input->notify();
 
     delay(1000);
+    changeLedMode(WAITING);
     digitalWrite(LED, LOW);
-    attachInterrupt(digitalPinToInterrupt(__BUTTONPIN), pushButton, FALLING);
+    setupInterrupts();
   }
+
+  if (ledRestart) {
+    Serial.printf("Switching to LED mode %d\n", ledMode);
+    delay(50); // make sure loops exit
+    ledRestart = false;
+    setupInterrupts();
+  }
+
   delay(50);
 }
 
-IRAM_ATTR void pushButton() {
-  detachInterrupt(digitalPinToInterrupt(__BUTTONPIN));
+void setupInterrupts() {
+  attachInterrupt(digitalPinToInterrupt(__BUTTONPIN_DOWN), buttonPressed, FALLING);
+  attachInterrupt(digitalPinToInterrupt(__BUTTONPIN_UP), buttonReleased, FALLING);
+  Serial.println("Setting up interrupts");
+}
+void clearInterrupts() {
+  detachInterrupt(digitalPinToInterrupt(__BUTTONPIN_DOWN));
+  detachInterrupt(digitalPinToInterrupt(__BUTTONPIN_UP));
+  Serial.println("Clearing interrupts");
+}
+
+void changeLedMode(LED_MODES mode) {
+    ledMode = mode;
+    ledRestart = true;
+}
+
+IRAM_ATTR void buttonPressed() {
+  clearInterrupts();  // reset in loop
+  Serial.println("Detected button press");
+  // pressed
   btnFlag = true;
+}
+
+IRAM_ATTR void buttonReleased() {
+  clearInterrupts();
+  Serial.println("Detected button release");
+  changeLedMode(ANTICIPATING); //TODO: timeout then switch to WAITING
+  Serial.println("Finished buttonReleased");
 }

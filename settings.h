@@ -17,12 +17,16 @@
   
 */
 
-#define __BUTTONPIN 39
-#define __MANUFACTURER "Michael Ruck"
-#define __BT_NAME "cam-remote-button"
+#define __BUTTONPIN_DOWN 4
+#define __BUTTONPIN_UP   16 // button released on duel-throw switch
+#define __MANUFACTURER "AKOM"
+#define __BT_NAME "remote-button-akom"
 
 /*
  * If you need another keycode, open hut1_12v2.pdf page 53
  */
 #define __SEND_KEY 0x5d //Keypad 5, for Android Open Camera
 //#define __SEND_KEY 0x80 //Volume up, for Iphone (not tested)
+
+#define __NEOPIXEL_PIN 17 // Pin where NeoPixels are connected
+#define __NEOPIXEL_COUNT 72
