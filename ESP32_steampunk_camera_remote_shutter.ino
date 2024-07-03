@@ -28,6 +28,9 @@
 #include "BLE2902.h"
 #include "BLEHIDDevice.h"
 #include "HIDTypes.h"
+
+// https://github.com/madleech/Button
+#include <Button.h>
 #include "./settings.h"
 
 
@@ -35,9 +38,10 @@
 #include <Adafruit_NeoPixel.h>
 // Declare our NeoPixel strip object:
 Adafruit_NeoPixel strip(__NEOPIXEL_COUNT, __NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
-enum LED_MODES { OFF, WAITING, SENDING, ANTICIPATING };
+enum LED_MODES { OFF, WAITING, SENDING, ANTICIPATING, SUCCESS };
 LED_MODES ledMode = OFF;
 bool ledRestart = false; // allows for quick mode change, ends loops
+Button button(__BUTTONPIN_DOWN);
 
 // on-board LED to indicate bluetooth activity
 #define LED 2
@@ -175,6 +179,9 @@ void neopixelServer(void*) {
             colorWipe(strip.Color(255, 0, 0), 30); // Red
             ledMode = (ledMode == SENDING) ? OFF: ledMode;
             break;
+        case SUCCESS:
+            rainbow(20);
+            break;
         case ANTICIPATING:
             if ((millis() - timeCurrentModeStarted) > __NEOPIXEL_MODE_ANTICIPATION_TIMEOUT) {
               // we've been anticipating too long, go back to waiting.
@@ -276,11 +283,14 @@ void setup() {
   Serial.begin(115200);
   Serial.println("Starting BLE works!");
 
-  // The Button
-  pinMode(__BUTTONPIN_UP, INPUT_PULLUP);
-  pinMode(__BUTTONPIN_DOWN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(__BUTTONPIN_DOWN), buttonPressed, FALLING);
-  attachInterrupt(digitalPinToInterrupt(__BUTTONPIN_UP), buttonReleased, FALLING);
+  button.begin();
+  button.pressed(); // eat the first keypress if already pressed
+
+//  // The Button
+//  pinMode(__BUTTONPIN_UP, INPUT_PULLUP);
+//  pinMode(__BUTTONPIN_DOWN, INPUT_PULLUP);
+//  attachInterrupt(digitalPinToInterrupt(__BUTTONPIN_DOWN), buttonPressed, FALLING);
+//  attachInterrupt(digitalPinToInterrupt(__BUTTONPIN_UP), buttonReleased, FALLING);
 
   // LED
   pinMode(LED, OUTPUT);
@@ -292,61 +302,89 @@ void setup() {
   strip.clear();
 //   pinMode(__NEOPIXEL_PIN, OUTPUT);
 //   digitalWrite(__NEOPIXEL_PIN, LOW);
-  changeBackgroundLedMode(WAITING);
+//  changeBackgroundLedMode(WAITING);
 
   xTaskCreate(taskServer, "bluetoothServer", 20000, NULL, 5, NULL);
   xTaskCreate(neopixelServer, "neopixelServer", 40000, NULL, 10, NULL);
+
+  xTaskCreate(buttonCheckerServer, "buttonCheckerServer", 20000, NULL, 10, NULL);
+}
+
+void sendKeypress() {
+  Serial.print("Sending keypress now ... ");
+  // Send
+  //Key press
+  uint8_t msg[] = {0x0, 0x0, __SEND_KEY, 0x0, 0x0, 0x0, 0x0, 0x0};
+  input->setValue(msg, sizeof(msg));
+  input->notify();
+
+  //Key release
+  uint8_t msg1[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+  input->setValue(msg1, sizeof(msg1));
+  input->notify();
+
+  Serial.println("Sent!");
+}
+
+void buttonCheckerServer(void*) {
+  for(;;) {
+
+    if (connected) {
+      if (ledMode == OFF) {
+        changeBackgroundLedMode(WAITING);
+      }
+      if (button.released()) {
+        changeBackgroundLedMode(ANTICIPATING);
+      } else if (connected && button.pressed()) {
+        btnFlag = false;
+//        changeBackgroundLedMode(OFF);
+        digitalWrite(LED, HIGH);
+        Serial.print("Cheese...");
+        // show a light show (one pass)
+        changeBackgroundLedMode(SENDING);
+        Serial.println("...");
+        delay(3000); // delays should match time to display SENDING
+
+        sendKeypress();
+
+        changeBackgroundLedMode(SUCCESS);
+        delay(1000);
+        changeBackgroundLedMode(WAITING);
+        digitalWrite(LED, LOW);
+
+  //    interrupts();
+      }
+
+    } else {
+      // not connected
+      changeBackgroundLedMode(OFF);
+    }
+    delay(100);
+  }
+//  if (!ledRestart) {
+////    interrupts();
+//  }
+//  delay(100);
 }
 
 void loop() {
-  if (connected & btnFlag) {
-    btnFlag = false;
-    changeBackgroundLedMode(OFF);
-    digitalWrite(LED, HIGH);
-    Serial.println("Cheese...");
-
-    // show a light show (one pass)
-    changeBackgroundLedMode(SENDING);
-    delay(3000); // delays should match time to display SENDING
-
-    Serial.print("Sending keypress now ... ");
-    // Send
-    //Key press
-    uint8_t msg[] = {0x0, 0x0, __SEND_KEY, 0x0, 0x0, 0x0, 0x0, 0x0};
-    input->setValue(msg, sizeof(msg));
-    input->notify();
-
-    //Key release
-    uint8_t msg1[] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
-    input->setValue(msg1, sizeof(msg1));
-    input->notify();
-
-    Serial.println("Sent!");
-
-    delay(1000);
-    changeBackgroundLedMode(WAITING);
-    digitalWrite(LED, LOW);
-    interrupts();
-  }
-
-  if (!ledRestart) {
-    interrupts();
-  }
-  delay(100);
+  delay(1);
 }
 
 void changeBackgroundLedMode(LED_MODES mode) {
+  if (mode != ledMode) {
     ledMode = mode;
     ledRestart = true;
+  }
 }
 
-IRAM_ATTR void buttonPressed() {
-  noInterrupts();  // reset in loop
-  // pressed
-  btnFlag = true;
-}
-
-IRAM_ATTR void buttonReleased() {
-  noInterrupts();
-  changeBackgroundLedMode(ANTICIPATING); //TODO: timeout then switch to WAITING
-}
+//IRAM_ATTR void buttonPressed() {
+//  noInterrupts();  // reset in loop
+//  // pressed
+//  btnFlag = true;
+//}
+//
+//IRAM_ATTR void buttonReleased() {
+//  noInterrupts();
+//  changeBackgroundLedMode(ANTICIPATING); //TODO: timeout then switch to WAITING
+//}
