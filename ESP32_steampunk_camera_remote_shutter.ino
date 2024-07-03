@@ -30,6 +30,7 @@
 #include "HIDTypes.h"
 
 // https://github.com/madleech/Button
+// Using instead of interrupts because it handles debouncing
 #include <Button.h>
 #include "./settings.h"
 
@@ -169,7 +170,9 @@ void neopixelServer(void*) {
 
         switch(ledMode) {
         case OFF:
-            yield();
+            strip.clear();
+            strip.show();
+            delay(50);
             break;
         case WAITING:
             shimmer(255, 0, 0, 1, __NEOPIXEL_MODE_SHIMMER_SPEED);
@@ -191,6 +194,8 @@ void neopixelServer(void*) {
             }
             break;
         }
+        delay(1);
+        yield();
     }
 }
 
@@ -286,12 +291,6 @@ void setup() {
   button.begin();
   button.pressed(); // eat the first keypress if already pressed
 
-//  // The Button
-//  pinMode(__BUTTONPIN_UP, INPUT_PULLUP);
-//  pinMode(__BUTTONPIN_DOWN, INPUT_PULLUP);
-//  attachInterrupt(digitalPinToInterrupt(__BUTTONPIN_DOWN), buttonPressed, FALLING);
-//  attachInterrupt(digitalPinToInterrupt(__BUTTONPIN_UP), buttonReleased, FALLING);
-
   // LED
   pinMode(LED, OUTPUT);
   digitalWrite(LED, LOW);
@@ -302,7 +301,7 @@ void setup() {
   strip.clear();
 //   pinMode(__NEOPIXEL_PIN, OUTPUT);
 //   digitalWrite(__NEOPIXEL_PIN, LOW);
-//  changeBackgroundLedMode(WAITING);
+  changeBackgroundLedMode(WAITING);
 
   xTaskCreate(taskServer, "bluetoothServer", 20000, NULL, 5, NULL);
   xTaskCreate(neopixelServer, "neopixelServer", 40000, NULL, 10, NULL);
@@ -352,7 +351,6 @@ void buttonCheckerServer(void*) {
         changeBackgroundLedMode(WAITING);
         digitalWrite(LED, LOW);
 
-  //    interrupts();
       }
 
     } else {
@@ -361,10 +359,6 @@ void buttonCheckerServer(void*) {
     }
     delay(100);
   }
-//  if (!ledRestart) {
-////    interrupts();
-//  }
-//  delay(100);
 }
 
 void loop() {
@@ -372,19 +366,8 @@ void loop() {
 }
 
 void changeBackgroundLedMode(LED_MODES mode) {
-  if (mode != ledMode) {
+  if (ledMode != mode) {
     ledMode = mode;
     ledRestart = true;
   }
 }
-
-//IRAM_ATTR void buttonPressed() {
-//  noInterrupts();  // reset in loop
-//  // pressed
-//  btnFlag = true;
-//}
-//
-//IRAM_ATTR void buttonReleased() {
-//  noInterrupts();
-//  changeBackgroundLedMode(ANTICIPATING); //TODO: timeout then switch to WAITING
-//}
