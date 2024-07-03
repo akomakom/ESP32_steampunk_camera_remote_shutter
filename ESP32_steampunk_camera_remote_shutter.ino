@@ -14,8 +14,9 @@
   ESP32 mini, or any other ESP32.
   Battery compartment 4.5V (3xAAA).
   Tactile switch button.
-  Pull up resistor 10k to 50k will work.
+  Pull up resistor 10k to 50k will work (unnecessary with internal pull-up)
   Double sided adhesive tape.
+  NeoPixels
 
   Author: Michael Ruck, 9. Juny 2019
   License: GNU Lesser General Public License version 3 (https://opensource.org/licenses/LGPL-3.0)
@@ -35,7 +36,7 @@
 // Declare our NeoPixel strip object:
 Adafruit_NeoPixel strip(__NEOPIXEL_COUNT, __NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 enum LED_MODES { OFF, WAITING, SENDING, ANTICIPATING };
-LED_MODES ledMode = WAITING;
+LED_MODES ledMode = OFF;
 bool ledRestart = false; // allows for quick mode change, ends loops
 
 // on-board LED to indicate bluetooth activity
@@ -167,10 +168,12 @@ void neopixelServer(void*) {
             yield();
             break;
         case WAITING:
-            shimmer(strip.Color(255, 0, 0), __NEOPIXEL_MODE_SHIMMER_SPEED);
+            shimmer(255, 0, 0, 1, __NEOPIXEL_MODE_SHIMMER_SPEED);
+//             colorWipe(strip.Color(255, 0, 0), 500);
             break;
         case SENDING:
-            colorWipe(strip.Color(255, 0, 0), 20); // Red
+            colorWipe(strip.Color(255, 0, 0), 30); // Red
+            ledMode = (ledMode == SENDING) ? OFF: ledMode;
             break;
         case ANTICIPATING:
             if ((millis() - timeCurrentModeStarted) > __NEOPIXEL_MODE_ANTICIPATION_TIMEOUT) {
@@ -190,14 +193,15 @@ void setStripToColor(uint32_t color) {
   }
 }
 
-void shimmer(uint32_t color, int wait) {
-  for (int brightness = __NEOPIXEL_MODE_SHIMMER_MIN_BRIGHTNESS; !ledRestart && brightness < __NEOPIXEL_MODE_SHIMMER_MAX_BRIGHTNESS ; brightness++) {
-    setStripToColor(color * brightness/255);
+void shimmer(int r, int g, int b, int step, int wait) {
+  for (int brightness = __NEOPIXEL_MODE_SHIMMER_MIN_BRIGHTNESS; !ledRestart && brightness < __NEOPIXEL_MODE_SHIMMER_MAX_BRIGHTNESS ; brightness+=step) {
+    setStripToColor(strip.Color(r * brightness / 255, g * brightness / 255, b * brightness / 255));
     strip.show();
     delay(wait);
   }
-  for (int brightness = __NEOPIXEL_MODE_SHIMMER_MAX_BRIGHTNESS; !ledRestart && brightness > __NEOPIXEL_MODE_SHIMMER_MIN_BRIGHTNESS ; brightness--) {
-    setStripToColor(color * brightness/255);
+  delay(wait * 10); // may look better
+  for (int brightness = __NEOPIXEL_MODE_SHIMMER_MAX_BRIGHTNESS; !ledRestart && brightness > __NEOPIXEL_MODE_SHIMMER_MIN_BRIGHTNESS ; brightness-=step) {
+    setStripToColor(strip.Color(r * brightness / 255, g * brightness / 255, b * brightness / 255));
     strip.show();
     delay(wait);
   }
@@ -285,16 +289,16 @@ void setup() {
   // NeoPixel
   strip.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
   strip.show();  // Turn OFF all pixels ASAP
-  pinMode(__NEOPIXEL_PIN, OUTPUT);
-  digitalWrite(__NEOPIXEL_PIN, LOW);
+  strip.clear();
+//   pinMode(__NEOPIXEL_PIN, OUTPUT);
+//   digitalWrite(__NEOPIXEL_PIN, LOW);
   changeBackgroundLedMode(WAITING);
 
   xTaskCreate(taskServer, "bluetoothServer", 20000, NULL, 5, NULL);
-  xTaskCreate(neopixelServer, "neopixelServer", 20000, NULL, 10, NULL);
+  xTaskCreate(neopixelServer, "neopixelServer", 40000, NULL, 10, NULL);
 }
 
 void loop() {
-
   if (connected & btnFlag) {
     btnFlag = false;
     changeBackgroundLedMode(OFF);
@@ -303,8 +307,9 @@ void loop() {
 
     // show a light show (one pass)
     changeBackgroundLedMode(SENDING);
-    delay(2000);
+    delay(3000); // delays should match time to display SENDING
 
+    Serial.print("Sending keypress now ... ");
     // Send
     //Key press
     uint8_t msg[] = {0x0, 0x0, __SEND_KEY, 0x0, 0x0, 0x0, 0x0, 0x0};
@@ -316,6 +321,8 @@ void loop() {
     input->setValue(msg1, sizeof(msg1));
     input->notify();
 
+    Serial.println("Sent!");
+
     delay(1000);
     changeBackgroundLedMode(WAITING);
     digitalWrite(LED, LOW);
@@ -325,7 +332,7 @@ void loop() {
   if (!ledRestart) {
     interrupts();
   }
-  delay(50);
+  delay(100);
 }
 
 void changeBackgroundLedMode(LED_MODES mode) {
