@@ -179,7 +179,7 @@ void neopixelServer(void*) {
 //             colorWipe(strip.Color(255, 0, 0), 500);
             break;
         case SENDING:
-            colorWipe(strip.Color(255, 0, 0), 30); // Red
+            colorWipe(strip.Color(255, 0, 0), 5); // Red
             ledMode = (ledMode == SENDING) ? OFF: ledMode;
             break;
         case SUCCESS:
@@ -342,7 +342,7 @@ void buttonCheckerServer(void*) {
         // show a light show (one pass)
         changeBackgroundLedMode(SENDING);
         Serial.println("...");
-        delay(3000); // delays should match time to display SENDING
+        delay(__SEND_DELAY); // delays should match time to display SENDING
 
         sendKeypress();
 

@@ -34,3 +34,6 @@
 #define __NEOPIXEL_MODE_SHIMMER_MIN_BRIGHTNESS 3
 #define __NEOPIXEL_MODE_SHIMMER_MAX_BRIGHTNESS 20
 #define __NEOPIXEL_MODE_SHIMMER_SPEED  80 // smaller is faster
+
+ // how long to wait before sending keypress, eg to show LED animation
+#define __SEND_DELAY 0
