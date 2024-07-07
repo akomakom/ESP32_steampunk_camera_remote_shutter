@@ -26,7 +26,8 @@
  * If you need another keycode, open hut1_12v2.pdf page 53
  */
 #define __SEND_KEY 0x5d //Keypad 5, for Android Open Camera
-//#define __SEND_KEY 0x80 //Volume up, for Iphone (not tested)
+//#define __SEND_KEY 0x81 //Volume up, for Iphone (not tested)
+
 
 #define __NEOPIXEL_PIN 17 // Pin where NeoPixels are connected
 #define __NEOPIXEL_COUNT 72

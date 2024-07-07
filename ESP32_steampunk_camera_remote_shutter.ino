@@ -325,6 +325,22 @@ void sendKeypress() {
   Serial.println("Sent!");
 }
 
+void sendKeypressAlt() {
+  Serial.print("Sending keypress now ... ");
+  // Send
+  //Key press
+  uint8_t msg[] = {0x01, 0x00};
+  input->setValue(msg, sizeof(msg));
+  input->notify();
+
+  //Key release
+  uint8_t msg1[] = {0x0, 0x0};
+  input->setValue(msg1, sizeof(msg1));
+  input->notify();
+
+  Serial.println("Sent!");
+}
+
 void buttonCheckerServer(void*) {
   for(;;) {
 
