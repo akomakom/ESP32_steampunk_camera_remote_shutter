@@ -17,8 +17,12 @@
   
 */
 
-#define __BUTTONPIN_DOWN 4
-#define __BUTTONPIN_UP   16 // button released on duel-throw switch
+#define __BUTTONPIN_DOWN 4 // Our input button (some shutter trigger)
+#define __EXT_SHUTTER_OUTPUTPIN 18 // for using external shutter
+// bluetooth shutter goes to power save after 5 min
+// wake it up with a single shutter click
+// Delay is 5 min + time for it to re-connect.
+#define __EXT_SHUTTER_KEEP_AWAKE_INTERVAL 310000
 #define __MANUFACTURER "AKOM"
 #define __BT_NAME "remote-button-akom"
 
